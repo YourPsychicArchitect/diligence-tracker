@@ -203,7 +203,6 @@ class SheetsAPI:
     def get_statistics(self, email, task):
         spreadsheet_id = self.get_or_create_spreadsheet(email)
         if not spreadsheet_id:
-            logger.error(f"Failed to get spreadsheet for {email}")
             return None
 
         try:
@@ -212,7 +211,27 @@ class SheetsAPI:
             ).execute()
             values = result.get('values', [])
             
-            entries = [datetime.datetime.fromisoformat(entry[0]) for entry in values[1:] if entry]
+            def parse_datetime(date_str):
+                try:
+                    # First try ISO format
+                    return datetime.datetime.fromisoformat(date_str)
+                except ValueError:
+                    try:
+                        # If that fails, try parsing with explicit format
+                        return datetime.datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+                    except ValueError:
+                        # If that fails too, try parsing with single-digit hours
+                        return datetime.datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+            
+            entries = []
+            for entry in values[1:]:  # Skip header row
+                if entry:
+                    try:
+                        dt = parse_datetime(entry[0])
+                        entries.append(dt)
+                    except (ValueError, IndexError) as e:
+                        print(f"Warning: Could not parse datetime '{entry[0]}': {e}")
+                        continue
             
             now = datetime.datetime.now()
             today = now.date()
@@ -225,8 +244,10 @@ class SheetsAPI:
             all_time_total = len(entries)
             
             week_data = [
-                {"day": (week_start + datetime.timedelta(days=i)).strftime("%A"),
-                 "count": sum(1 for entry in entries if entry.date() == week_start + datetime.timedelta(days=i))}
+                {
+                    "day": (week_start + datetime.timedelta(days=i)).strftime("%A"),
+                    "count": sum(1 for entry in entries if entry.date() == week_start + datetime.timedelta(days=i))
+                }
                 for i in range(7)
             ]
             
@@ -238,7 +259,7 @@ class SheetsAPI:
                 "week_data": week_data
             }
         except HttpError as error:
-            logger.exception(error)
+            print(f"An error occurred: {error}")
             return None
 
     def set_user_timezone(self, email, timezone):
