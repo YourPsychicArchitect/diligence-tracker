@@ -1,4 +1,4 @@
-import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, forwardRef, useImperativeHandle, useCallback } from 'react';
 import { Box, Typography, Grid, Paper, CircularProgress } from '@mui/material';
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import { API_BASE_URL } from '../config';
@@ -8,9 +8,10 @@ const SummaryStatistics = forwardRef(({ email, task }, ref) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     if (!email || !task) {
       setLoading(false);
+      setStats(null);
       return;
     }
 
@@ -34,11 +35,11 @@ const SummaryStatistics = forwardRef(({ email, task }, ref) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [email, task]);
 
   useEffect(() => {
     fetchStats();
-  }, [email, task]);
+  }, [fetchStats]);
 
   useImperativeHandle(ref, () => ({
     refreshData: fetchStats

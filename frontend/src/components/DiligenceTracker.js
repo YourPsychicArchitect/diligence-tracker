@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Typography, Button, TextField, Select, MenuItem, IconButton, AppBar, Toolbar, Tooltip, Link } from '@mui/material';
 import { Edit as EditIcon, Check as CheckIcon, ExitToApp as LogoutIcon } from '@mui/icons-material';
 import { API_BASE_URL } from '../config';
@@ -23,12 +23,7 @@ function DiligenceTracker({ email, onLogout }) {
   const hourlyChartRef = React.useRef();
   const summaryStatsRef = React.useRef();
 
-  useEffect(() => {
-    fetchTasks();
-    fetchSpreadsheetUrl();
-  }, [email]);
-
-  const fetchTasks = async () => {
+  const fetchTasks = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/tasks?email=${encodeURIComponent(email)}`);
       if (response.ok) {
@@ -43,9 +38,9 @@ function DiligenceTracker({ email, onLogout }) {
     } catch (error) {
       console.error('Error fetching tasks:', error);
     }
-  };
+  }, [email]);
 
-  const fetchSpreadsheetUrl = async () => {
+  const fetchSpreadsheetUrl = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/spreadsheet_url?email=${encodeURIComponent(email)}`);
       if (response.ok) {
@@ -57,9 +52,16 @@ function DiligenceTracker({ email, onLogout }) {
     } catch (error) {
       console.error('Error fetching spreadsheet URL:', error);
     }
-  };
+  }, [email]);
+
+  useEffect(() => {
+    fetchTasks();
+    fetchSpreadsheetUrl();
+  }, [fetchTasks, fetchSpreadsheetUrl]);
 
   const handleDidIt = async () => {
+    if (!selectedTask) return;
+    
     try {
       const response = await fetch(`${API_BASE_URL}/api/entry`, {
         method: 'POST',

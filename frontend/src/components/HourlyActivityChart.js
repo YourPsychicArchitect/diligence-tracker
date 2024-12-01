@@ -1,12 +1,15 @@
-import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, forwardRef, useImperativeHandle, useCallback } from 'react';
 import { Box, Typography, Tooltip } from '@mui/material';
 import { API_BASE_URL } from '../config';
 
 const HourlyActivityChart = forwardRef(({ email, task }, ref) => {
   const [hourlyData, setHourlyData] = useState(Array(24).fill(0));
 
-  const fetchHourlyData = async () => {
-    if (!email || !task) return;
+  const fetchHourlyData = useCallback(async () => {
+    if (!email || !task) {
+      setHourlyData(Array(24).fill(0));
+      return;
+    }
     
     try {
       const response = await fetch(
@@ -23,11 +26,11 @@ const HourlyActivityChart = forwardRef(({ email, task }, ref) => {
       console.error('Error fetching hourly data:', error);
       setHourlyData(Array(24).fill(0));
     }
-  };
+  }, [email, task]);
 
   useEffect(() => {
     fetchHourlyData();
-  }, [email, task]);
+  }, [fetchHourlyData]);
 
   useImperativeHandle(ref, () => ({
     refreshData: fetchHourlyData
