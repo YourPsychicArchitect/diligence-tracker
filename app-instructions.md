@@ -1,0 +1,8 @@
+Using React and Python, please provide code for a simple "Diligence Tracker" app (repository name dilligence-tracker) that includes the following:
+Interface:
+- Simple but modern login to enter an email (no password), which username will be used to load and store their data
+- After logging in, a page with a big circular button saying "I did it!" that the user can click on, which calls the backend API to record an entry.
+- Near the button if text describing what is being done, which the user can edit. This is short text limited to 31 characters (because it's used by the backend as the sheet tab name in their Google spreadsheet). This name is sent in the API when saving or loading data. Initially, an API is used to load all previous diligence tasks, and the user can select which they want if there is more than one, or switch between them in a menu.
+- Design/style as a UI expert would, and works well on both mobile and web
+- Near the big button the user should see what hours of the current day had at least 1 entry, in a graphical way (e.g. the hours are colored in if the button was pressed during that hour, and hours that have more entries are a darker color)
+- On the same page below the big button, a page showing summary statistics and relevant graphs that update dynamically. e.g. total for today, total for each day of the current week in a graphical way, total for each month of the current year, total over all time, etc. Keep in mind that the point of the app is to encourage the user to focus on this thing at many different points of the day, keeping it top of mind to practice frequently (e.g. reality checks for lucid dreaming, or self hypnosis, or meditation)
