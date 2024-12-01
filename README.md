@@ -4,8 +4,14 @@
 The Diligence Tracker is a modern, simple React and Python-based application that allows users to track their tasks efficiently using Google Sheets as a backend storage system. The backend is built with FastAPI for high performance and easy API development[1].
 
 ## Server Setup
-export GOOGLE_APPLICATION_CREDENTIALS="psychic-apps-443021-c8-65a950bfea27.json"
-uvicorn app:app --host 0.0.0.0 --port 8003 --reload
+cd backend. 
+export GOOGLE_APPLICATION_CREDENTIALS="psychic-apps-443021-c8-65a950bfea27.json"  
+uvicorn app:app --host 0.0.0.0 --port 8003 --reload  
+
+cd frontend  
+export REACT_APP_API_BASE_URL=http://localhost:8003  
+npm install  
+npm start  
 
 ## Installation
 

@@ -145,27 +145,28 @@ class SheetsAPI:
     def add_entry(self, email, task):
         spreadsheet_id = self.get_or_create_spreadsheet(email)
         if not spreadsheet_id:
-            logger.error(f"Failed to add entry for {email}")
             return False
 
         try:
             # Ensure the task sheet exists
-            self.sheets_service.spreadsheets().batchUpdate(
-                spreadsheetId=spreadsheet_id,
-                body={
-                    "requests": [{
-                        "addSheet": {
-                            "properties": {"title": task}
-                        }
-                    }]
-                }
-            ).execute()
-        except HttpError:
-            # Sheet already exists, continue
-            pass
+            try:
+                self.sheets_service.spreadsheets().batchUpdate(
+                    spreadsheetId=spreadsheet_id,
+                    body={
+                        "requests": [{
+                            "addSheet": {
+                                "properties": {"title": task}
+                            }
+                        }]
+                    }
+                ).execute()
+            except HttpError:
+                # Sheet already exists, continue
+                pass
 
-        try:
-            now = datetime.datetime.now().isoformat()
+            # Format datetime consistently with zero-padded values
+            now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
             self.sheets_service.spreadsheets().values().append(
                 spreadsheetId=spreadsheet_id,
                 range=f"{task}!A:A",
@@ -173,14 +174,14 @@ class SheetsAPI:
                 body={"values": [[now]]}
             ).execute()
             return True
+            
         except HttpError as error:
-            logger.exception(error)
+            print(f"An error occurred: {error}")
             return False
 
     def get_hourly_activity(self, email, task):
         spreadsheet_id = self.get_or_create_spreadsheet(email)
         if not spreadsheet_id:
-            logger.error(f"Failed to get spreadsheet for {email}")
             return None
 
         try:
@@ -190,14 +191,32 @@ class SheetsAPI:
             values = result.get('values', [])
             
             hourly_activity = [0] * 24
+
+            def parse_datetime(date_str):
+                try:
+                    # First try ISO format
+                    return datetime.datetime.fromisoformat(date_str)
+                except ValueError:
+                    try:
+                        # If that fails, try parsing with explicit format
+                        return datetime.datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+                    except ValueError:
+                        # For non-zero-padded hours
+                        return datetime.datetime.strptime(date_str, '%Y-%m-%d %-H:%M:%S')
+            
             for entry in values[1:]:  # Skip header row
                 if entry:
-                    hour = datetime.datetime.fromisoformat(entry[0]).hour
-                    hourly_activity[hour] += 1
+                    try:
+                        dt = parse_datetime(entry[0])
+                        hourly_activity[dt.hour] += 1
+                    except (ValueError, IndexError) as e:
+                        print(f"Warning: Could not parse datetime '{entry[0]}': {e}")
+                        continue
             
             return hourly_activity
+
         except HttpError as error:
-            logger.exception(error)
+            print(f"An error occurred: {error}")
             return None
 
     def get_statistics(self, email, task):
