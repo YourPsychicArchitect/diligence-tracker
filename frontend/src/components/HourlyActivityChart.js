@@ -1,99 +1,97 @@
-import React, { useState, useEffect, forwardRef, useImperativeHandle, useCallback } from 'react';
-import { Box, Typography, Tooltip } from '@mui/material';
+import React, { useState, useEffect } from 'react';
+import { Box, Typography } from '@mui/material';
 import { API_BASE_URL } from '../config';
 
-const HourlyActivityChart = forwardRef(({ email, task }, ref) => {
-  const [hourlyData, setHourlyData] = useState(Array(24).fill(0));
+function HourlyActivityChart({ email, task }) {
+  const [hourlyData, setHourlyData] = useState([]);
 
-  const fetchHourlyData = useCallback(async () => {
-    if (!email || !task) {
-      setHourlyData(Array(24).fill(0));
-      return;
-    }
-    
+  useEffect(() => {
+    fetchHourlyData();
+  }, [email, task]);
+
+  const fetchHourlyData = async () => {
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/hourly_activity?email=${encodeURIComponent(email)}&task=${encodeURIComponent(task)}`
-      );
+      const response = await fetch(`${API_BASE_URL}/api/hourly_activity?email=${encodeURIComponent(email)}&task=${encodeURIComponent(task)}`);
       if (response.ok) {
         const data = await response.json();
         setHourlyData(data.hourly_activity);
       } else {
-        console.error('Failed to fetch hourly data');
-        setHourlyData(Array(24).fill(0));
+        throw new Error('Failed to fetch hourly data');
       }
     } catch (error) {
       console.error('Error fetching hourly data:', error);
-      setHourlyData(Array(24).fill(0));
     }
-  }, [email, task]);
-
-  useEffect(() => {
-    fetchHourlyData();
-  }, [fetchHourlyData]);
-
-  useImperativeHandle(ref, () => ({
-    refreshData: fetchHourlyData
-  }));
-
-  const getColor = (count) => {
-    if (count === 0) return '#424242';
-    const intensity = Math.min(0.3 + count * 0.2, 1);
-    return `rgba(123, 31, 162, ${intensity})`; // Using primary color from theme
   };
 
   return (
-    <Box sx={{ width: '100%', maxWidth: 600, mx: 'auto', mt: 2 }}>
-      <Typography variant="h6" gutterBottom align="center">
-        Today's Activity
-      </Typography>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-        {hourlyData.map((count, index) => (
-          <Tooltip 
-            key={index} 
-            title={`${index}:00 - ${count} ${count === 1 ? 'entry' : 'entries'}`} 
-            arrow
-          >
+    <Box sx={{ width: '100%', mt: 6, mb: 4 }}>
+      <Typography variant="h6" gutterBottom align="center">Today's Activity</Typography>
+      <Box sx={{ 
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1,
+        px: { xs: 1, sm: 2, md: 3 }
+      }}>
+        {/* Activity bars */}
+        <Box sx={{ 
+          display: 'grid',
+          gridTemplateColumns: 'repeat(24, 1fr)',
+          gap: '2px',
+          mb: 1
+        }}>
+          {hourlyData.map((count, index) => (
             <Box
+              key={index}
               sx={{
-                width: 12,
-                height: 40,
-                backgroundColor: getColor(count),
-                borderRadius: 1,
-                transition: 'all 0.3s ease',
-                '&:hover': {
-                  transform: 'scale(1.1)',
-                  cursor: 'pointer'
-                },
+                height: 24,
+                backgroundColor: count > 0 ? 'primary.main' : 'grey.700',
+                opacity: count > 0 ? Math.min(0.3 + count * 0.1, 1) : 0.3,
+                borderRadius: '4px',
+                position: 'relative',
+                '&:hover::after': {
+                  content: `"Hour ${index}: ${count} entries"`,
+                  position: 'absolute',
+                  bottom: '100%',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  backgroundColor: 'rgba(0,0,0,0.8)',
+                  color: 'white',
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  fontSize: '12px',
+                  whiteSpace: 'nowrap',
+                  zIndex: 1
+                }
               }}
             />
-          </Tooltip>
-        ))}
-      </Box>
-      <Box 
-        sx={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          px: 1,
-          overflowX: 'auto'
-        }}
-      >
-        {Array.from({ length: 24 }, (_, i) => (
-          <Typography 
-            key={i} 
-            variant="caption" 
-            sx={{ 
-              minWidth: 20, 
-              textAlign: 'center',
-              color: 'text.secondary'
-            }}
-          >
-            {i}
-          </Typography>
-        ))}
+          ))}
+        </Box>
+        
+        {/* Hour labels */}
+        <Box sx={{ 
+          display: 'grid',
+          gridTemplateColumns: 'repeat(24, 1fr)',
+          gap: '2px'
+        }}>
+          {Array.from({ length: 24 }, (_, i) => (
+            <Typography
+              key={i}
+              variant="caption"
+              sx={{
+                textAlign: 'center',
+                fontSize: { xs: '0.65rem', sm: '0.75rem' },
+                transform: { xs: 'rotate(-45deg)', sm: 'none' },
+                transformOrigin: 'center',
+                height: { xs: '20px', sm: 'auto' }
+              }}
+            >
+              {i}
+            </Typography>
+          ))}
+        </Box>
       </Box>
     </Box>
   );
-});
+}
 
 export default HourlyActivityChart;

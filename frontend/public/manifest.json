@@ -1,6 +1,6 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "short_name": "Diligence Tracker",
+  "name": "Track which hours and days you do something.",
   "icons": [
     {
       "src": "favicon.ico",
