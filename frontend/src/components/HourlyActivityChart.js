@@ -5,10 +5,6 @@ import { API_BASE_URL } from '../config';
 function HourlyActivityChart({ email, task }) {
   const [hourlyData, setHourlyData] = useState([]);
 
-  useEffect(() => {
-    fetchHourlyData();
-  }, [email, task]);
-
   const fetchHourlyData = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/hourly_activity?email=${encodeURIComponent(email)}&task=${encodeURIComponent(task)}`);
@@ -22,6 +18,10 @@ function HourlyActivityChart({ email, task }) {
       console.error('Error fetching hourly data:', error);
     }
   };
+
+  useEffect(() => {
+    fetchHourlyData();
+  }, [email, task]);
 
   return (
     <Box sx={{ width: '100%', mt: 6, mb: 4 }}>
