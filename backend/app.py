@@ -19,6 +19,10 @@ app.add_middleware(
 
 sheets_api = SheetsAPI()
 
+class TimezoneRequest(BaseModel):
+    email: EmailStr
+    timezone: str
+
 class EntryRequest(BaseModel):
     email: EmailStr
     task: str
@@ -73,8 +77,8 @@ async def get_statistics(email: EmailStr = Query(...), task: str = Query(...)):
     return statistics
 
 @app.post("/api/set_timezone")
-async def set_timezone(email: EmailStr = Query(...), timezone: str = Query(...)):
-    success = sheets_api.set_user_timezone(email, timezone)
+async def set_timezone(request: TimezoneRequest):
+    success = sheets_api.set_user_timezone(request.email, request.timezone)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to set timezone")
     return {"success": True}
