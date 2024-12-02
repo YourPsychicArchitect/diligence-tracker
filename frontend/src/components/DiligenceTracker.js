@@ -5,6 +5,7 @@ import { API_BASE_URL } from '../config';
 import HourlyActivityChart from './HourlyActivityChart';
 import SummaryStatistics from './SummaryStatistics';
 import { styled } from '@mui/material/styles';
+import TimezoneSelector from './TimezoneSelector';
 
 const StyledLink = styled(Link)(({ theme }) => ({
   color: theme.palette.common.white,
@@ -192,7 +193,11 @@ function DiligenceTracker({ email, onLogout }) {
           email={email} 
           task={selectedTask} 
         />
-        
+
+        <Box sx={{ width: '100%', display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+          <TimezoneSelector email={email} />
+        </Box>
+
         <Box sx={{ p: 2, width: '100%' }}>
           <SummaryStatistics 
             ref={summaryStatsRef}

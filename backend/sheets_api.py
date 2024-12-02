@@ -2,10 +2,10 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import datetime
-import os
+import pytz
 from loguru import logger
+import os
 
-# Update scopes to include Drive API access
 SCOPES = [
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive'
@@ -164,19 +164,27 @@ class SheetsAPI:
                 # Sheet already exists, continue
                 pass
 
-            # Format datetime consistently with zero-padded values
-            now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            # Get user's timezone
+            user_timezone = self.get_user_timezone(email) or 'UTC'
+            local_tz = pytz.timezone(user_timezone)
+            
+            # Convert local time to UTC before storing
+            local_now = datetime.datetime.now(local_tz)
+            utc_now = local_now.astimezone(pytz.UTC)
+            
+            # Store UTC time with explicit timezone marker
+            timestamp = utc_now.strftime('%Y-%m-%d %H:%M:%S UTC')
             
             self.sheets_service.spreadsheets().values().append(
                 spreadsheetId=spreadsheet_id,
-                range=f"{task}!A:A",
+                range=f"{task}!A:B",  # Note: Now using two columns
                 valueInputOption="USER_ENTERED",
-                body={"values": [[now]]}
+                body={"values": [[timestamp, user_timezone]]}  # Store timezone for historical reference
             ).execute()
             return True
             
         except HttpError as error:
-            print(f"An error occurred: {error}")
+            logger.exception(f"An error occurred: {error}")
             return False
 
     def get_hourly_activity(self, email, task):
@@ -186,37 +194,58 @@ class SheetsAPI:
 
         try:
             result = self.sheets_service.spreadsheets().values().get(
-                spreadsheetId=spreadsheet_id, range=f"{task}!A:A"
+                spreadsheetId=spreadsheet_id, range=f"{task}!A:B"
             ).execute()
             values = result.get('values', [])
             
+            # Get user's current timezone
+            user_timezone = self.get_user_timezone(email) or 'UTC'
+            local_tz = pytz.timezone(user_timezone)
+            
             hourly_activity = [0] * 24
-
-            def parse_datetime(date_str):
-                try:
-                    # First try ISO format
-                    return datetime.datetime.fromisoformat(date_str)
-                except ValueError:
+            
+            def parse_stored_datetime(date_str, stored_timezone=None):
+                if 'UTC' in date_str:
+                    # Parse UTC time
+                    dt = datetime.datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S UTC')
+                    dt = pytz.UTC.localize(dt)
+                else:
+                    # Handle legacy data (stored in unknown timezone)
                     try:
-                        # If that fails, try parsing with explicit format
-                        return datetime.datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+                        dt = datetime.datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+                        if stored_timezone:
+                            # Use stored timezone if available
+                            original_tz = pytz.timezone(stored_timezone)
+                            dt = original_tz.localize(dt)
+                        else:
+                            # Assume UTC for legacy data
+                            dt = pytz.UTC.localize(dt)
                     except ValueError:
-                        # For non-zero-padded hours
-                        return datetime.datetime.strptime(date_str, '%Y-%m-%d %-H:%M:%S')
+                        dt = datetime.datetime.strptime(date_str, '%Y-%m-%d %-H:%M:%S')
+                        dt = pytz.UTC.localize(dt)
+                
+                # Convert to user's current timezone
+                return dt.astimezone(local_tz)
+            
+            today = datetime.datetime.now(local_tz).date()
             
             for entry in values[1:]:  # Skip header row
                 if entry:
                     try:
-                        dt = parse_datetime(entry[0])
-                        hourly_activity[dt.hour] += 1
+                        stored_timezone = entry[1] if len(entry) > 1 else None
+                        dt = parse_stored_datetime(entry[0], stored_timezone)
+                        
+                        # Only count entries from today in user's timezone
+                        if dt.date() == today:
+                            hourly_activity[dt.hour] += 1
                     except (ValueError, IndexError) as e:
-                        print(f"Warning: Could not parse datetime '{entry[0]}': {e}")
+                        logger.warning(f"Could not parse datetime '{entry[0]}': {e}")
                         continue
             
             return hourly_activity
 
         except HttpError as error:
-            print(f"An error occurred: {error}")
+            logger.exception(f"An error occurred: {error}")
             return None
 
     def get_statistics(self, email, task):
@@ -226,33 +255,49 @@ class SheetsAPI:
 
         try:
             result = self.sheets_service.spreadsheets().values().get(
-                spreadsheetId=spreadsheet_id, range=f"{task}!A:A"
+                spreadsheetId=spreadsheet_id, range=f"{task}!A:B"
             ).execute()
             values = result.get('values', [])
             
-            def parse_datetime(date_str):
-                try:
-                    # First try ISO format
-                    return datetime.datetime.fromisoformat(date_str)
-                except ValueError:
+            # Get user's current timezone
+            user_timezone = self.get_user_timezone(email) or 'UTC'
+            local_tz = pytz.timezone(user_timezone)
+            
+            def parse_stored_datetime(date_str, stored_timezone=None):
+                if 'UTC' in date_str:
+                    # Parse UTC time
+                    dt = datetime.datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S UTC')
+                    dt = pytz.UTC.localize(dt)
+                else:
+                    # Handle legacy data
                     try:
-                        # If that fails, try parsing with explicit format
-                        return datetime.datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+                        dt = datetime.datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+                        if stored_timezone:
+                            # Use stored timezone if available
+                            original_tz = pytz.timezone(stored_timezone)
+                            dt = original_tz.localize(dt)
+                        else:
+                            # Assume UTC for legacy data
+                            dt = pytz.UTC.localize(dt)
                     except ValueError:
-                        # If that fails too, try parsing with single-digit hours
-                        return datetime.datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+                        dt = datetime.datetime.strptime(date_str, '%Y-%m-%d %-H:%M:%S')
+                        dt = pytz.UTC.localize(dt)
+                
+                # Convert to user's current timezone
+                return dt.astimezone(local_tz)
             
             entries = []
             for entry in values[1:]:  # Skip header row
                 if entry:
                     try:
-                        dt = parse_datetime(entry[0])
+                        stored_timezone = entry[1] if len(entry) > 1 else None
+                        dt = parse_stored_datetime(entry[0], stored_timezone)
                         entries.append(dt)
                     except (ValueError, IndexError) as e:
-                        print(f"Warning: Could not parse datetime '{entry[0]}': {e}")
+                        logger.warning(f"Could not parse datetime '{entry[0]}': {e}")
                         continue
             
-            now = datetime.datetime.now()
+            now = datetime.datetime.now(local_tz)
             today = now.date()
             week_start = today - datetime.timedelta(days=today.weekday())
             month_start = today.replace(day=1)
@@ -278,7 +323,7 @@ class SheetsAPI:
                 "week_data": week_data
             }
         except HttpError as error:
-            print(f"An error occurred: {error}")
+            logger.exception(f"An error occurred: {error}")
             return None
 
     def set_user_timezone(self, email, timezone):
