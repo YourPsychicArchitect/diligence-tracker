@@ -1,11 +1,35 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Box, Typography, Button, TextField, Select, MenuItem, IconButton, AppBar, Toolbar, Tooltip, Link } from '@mui/material';
-import { Edit as EditIcon, Check as CheckIcon, ExitToApp as LogoutIcon } from '@mui/icons-material';
+import { 
+  Box, 
+  Typography, 
+  Button, 
+  TextField, 
+  Select, 
+  MenuItem, 
+  IconButton, 
+  AppBar, 
+  Toolbar, 
+  Tooltip, 
+  Link,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions 
+} from '@mui/material';
+import { 
+  Edit as EditIcon, 
+  Check as CheckIcon, 
+  ExitToApp as LogoutIcon, 
+  Add as AddIcon,
+  Help as HelpIcon
+} from '@mui/icons-material';
 import { API_BASE_URL } from '../config';
 import HourlyActivityChart from './HourlyActivityChart';
 import SummaryStatistics from './SummaryStatistics';
 import { styled } from '@mui/material/styles';
 import TimezoneSelector from './TimezoneSelector';
+import HelpDialog from './HelpDialog';
+
 
 const StyledLink = styled(Link)(({ theme }) => ({
   color: theme.palette.common.white,
@@ -15,12 +39,17 @@ const StyledLink = styled(Link)(({ theme }) => ({
   },
 }));
 
+const NEW_TASK_VALUE = "__new_task__";
+
 function DiligenceTracker({ email, onLogout }) {
   const [tasks, setTasks] = useState([]);
   const [selectedTask, setSelectedTask] = useState('');
   const [isEditingTask, setIsEditingTask] = useState(false);
   const [newTaskName, setNewTaskName] = useState('');
   const [spreadsheetUrl, setSpreadsheetUrl] = useState('');
+  const [isNewTaskDialogOpen, setIsNewTaskDialogOpen] = useState(false);
+  const [newTaskError, setNewTaskError] = useState('');
+  const [showHelp, setShowHelp] = useState(false);
   const hourlyChartRef = React.useRef();
   const summaryStatsRef = React.useRef();
 
@@ -30,7 +59,7 @@ function DiligenceTracker({ email, onLogout }) {
       if (response.ok) {
         const data = await response.json();
         setTasks(data.tasks);
-        if (data.tasks.length > 0) {
+        if (data.tasks.length > 0 && !selectedTask) {
           setSelectedTask(data.tasks[0]);
         }
       } else {
@@ -39,7 +68,7 @@ function DiligenceTracker({ email, onLogout }) {
     } catch (error) {
       console.error('Error fetching tasks:', error);
     }
-  }, [email]);
+  }, [email, selectedTask]);
 
   const fetchSpreadsheetUrl = useCallback(async () => {
     try {
@@ -88,7 +117,12 @@ function DiligenceTracker({ email, onLogout }) {
   };
 
   const handleTaskChange = (event) => {
-    setSelectedTask(event.target.value);
+    const value = event.target.value;
+    if (value === NEW_TASK_VALUE) {
+      setIsNewTaskDialogOpen(true);
+    } else {
+      setSelectedTask(value);
+    }
   };
 
   const handleEditTask = () => {
@@ -123,6 +157,50 @@ function DiligenceTracker({ email, onLogout }) {
     }
   };
 
+  const handleNewTaskSubmit = async () => {
+    if (!newTaskName) {
+      setNewTaskError('Task name is required');
+      return;
+    }
+
+    if (newTaskName.length > 31) {
+      setNewTaskError('Task name must be 31 characters or less');
+      return;
+    }
+
+    if (tasks.includes(newTaskName)) {
+      setNewTaskError('Task name already exists');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/update_task`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          old_task: newTaskName,
+          new_task: newTaskName
+        }),
+      });
+
+      if (response.ok) {
+        setTasks([...tasks, newTaskName]);
+        setSelectedTask(newTaskName);
+        setIsNewTaskDialogOpen(false);
+        setNewTaskName('');
+        setNewTaskError('');
+      } else {
+        throw new Error('Failed to create new task');
+      }
+    } catch (error) {
+      console.error('Error creating new task:', error);
+      setNewTaskError('Failed to create new task');
+    }
+  };
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <AppBar position="static">
@@ -130,6 +208,11 @@ function DiligenceTracker({ email, onLogout }) {
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
             Diligence Tracker
           </Typography>
+          <Tooltip title="Help">
+            <IconButton color="inherit" onClick={() => setShowHelp(true)}>
+              <HelpIcon />
+            </IconButton>
+          </Tooltip>
           <Tooltip title="Logout">
             <IconButton color="inherit" onClick={onLogout}>
               <LogoutIcon />
@@ -146,6 +229,8 @@ function DiligenceTracker({ email, onLogout }) {
               onChange={(e) => setNewTaskName(e.target.value)}
               inputProps={{ maxLength: 31 }}
               sx={{ mr: 1 }}
+              error={newTaskName.length > 31}
+              helperText={newTaskName.length > 31 ? 'Maximum 31 characters' : ''}
             />
             <Tooltip title="Save task name">
               <IconButton onClick={handleSaveTask}>
@@ -159,9 +244,15 @@ function DiligenceTracker({ email, onLogout }) {
               {tasks.map((task) => (
                 <MenuItem key={task} value={task}>{task}</MenuItem>
               ))}
+              <MenuItem value={NEW_TASK_VALUE}>
+                <Box sx={{ display: 'flex', alignItems: 'center', color: 'primary.main' }}>
+                  <AddIcon sx={{ mr: 1 }} />
+                  Add new task
+                </Box>
+              </MenuItem>
             </Select>
             <Tooltip title="Edit task name">
-              <IconButton onClick={handleEditTask}>
+              <IconButton onClick={handleEditTask} disabled={!selectedTask}>
                 <EditIcon />
               </IconButton>
             </Tooltip>
@@ -173,6 +264,7 @@ function DiligenceTracker({ email, onLogout }) {
           color="primary"
           size="large"
           onClick={handleDidIt}
+          disabled={!selectedTask}
           sx={{
             width: 200,
             height: 200,
@@ -214,6 +306,43 @@ function DiligenceTracker({ email, onLogout }) {
           )}
         </Box>
       </Box>
+
+      <Dialog open={isNewTaskDialogOpen} onClose={() => {
+        setIsNewTaskDialogOpen(false);
+        setNewTaskName('');
+        setNewTaskError('');
+      }}>
+        <DialogTitle>Create New Task</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Task Name"
+            fullWidth
+            value={newTaskName}
+            onChange={(e) => setNewTaskName(e.target.value)}
+            inputProps={{ maxLength: 31 }}
+            error={!!newTaskError}
+            helperText={newTaskError || 'Maximum 31 characters'}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setIsNewTaskDialogOpen(false);
+            setNewTaskName('');
+            setNewTaskError('');
+          }}>
+            Cancel
+          </Button>
+          <Button onClick={handleNewTaskSubmit} variant="contained">
+            Create
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <HelpDialog 
+        open={showHelp}
+        onClose={() => setShowHelp(false)}
+      />
     </Box>
   );
 }

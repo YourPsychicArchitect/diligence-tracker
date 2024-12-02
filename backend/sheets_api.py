@@ -5,6 +5,8 @@ import datetime
 import pytz
 from loguru import logger
 import os
+from cachetools import TTLCache
+from threading import Lock
 
 SCOPES = [
     'https://www.googleapis.com/auth/spreadsheets',
@@ -20,6 +22,40 @@ class SheetsAPI:
         self.drive_service = build('drive', 'v3', credentials=self.creds)
         self.admin_email = "joshua@yourpsychicarchitect.com"
         self.master_sheet_id = self.get_or_create_master_sheet()
+
+        # TTL Cache for 24 hours, max 300 users
+        self.cache = TTLCache(maxsize=300, ttl=86400)  # 86400 seconds = 24 hours
+        self.cache_lock = Lock()
+
+    def _get_cache_key(self, email, task=None):
+        return f"{email}:{task}" if task else email
+
+    def _cache_get(self, email, task=None):
+        with self.cache_lock:
+            return self.cache.get(self._get_cache_key(email, task))
+
+    def _cache_set(self, email, data, task=None):
+        with self.cache_lock:
+            self.cache[self._get_cache_key(email, task)] = data
+
+    def _ensure_headers(self, spreadsheet_id, task):
+        try:
+            result = self.sheets_service.spreadsheets().values().get(
+                spreadsheetId=spreadsheet_id, range=f"{task}!A1:B1"
+            ).execute()
+            values = result.get('values', [])
+            
+            if not values:
+                # Add headers if they don't exist
+                headers = [['Timestamp (UTC)', 'Timezone']]
+                self.sheets_service.spreadsheets().values().update(
+                    spreadsheetId=spreadsheet_id,
+                    range=f"{task}!A1:B1",
+                    valueInputOption="USER_ENTERED",
+                    body={"values": headers}
+                ).execute()
+        except HttpError as error:
+            logger.exception(f"Error ensuring headers: {error}")
 
     def share_spreadsheet(self, spreadsheet_id, email):
         try:
@@ -128,6 +164,11 @@ class SheetsAPI:
             return []
 
     def get_entries(self, email, task):
+        # Check cache first
+        cached_entries = self._cache_get(email, task)
+        if cached_entries is not None:
+            return cached_entries
+
         spreadsheet_id = self.get_or_create_spreadsheet(email)
         if not spreadsheet_id:
             return []
@@ -137,7 +178,12 @@ class SheetsAPI:
                 spreadsheetId=spreadsheet_id, range=f"{task}!A:A"
             ).execute()
             values = result.get('values', [])
-            return [entry[0] for entry in values if entry]
+            entries = [entry[0] for entry in values[1:] if entry]  # Skip header row
+            
+            # Cache the results
+            self._cache_set(email, entries, task)
+            
+            return entries
         except HttpError as error:
             logger.exception(error)
             return []
@@ -160,9 +206,11 @@ class SheetsAPI:
                         }]
                     }
                 ).execute()
+                # Ensure headers exist for new sheet
+                self._ensure_headers(spreadsheet_id, task)
             except HttpError:
-                # Sheet already exists, continue
-                pass
+                # Sheet already exists, ensure headers
+                self._ensure_headers(spreadsheet_id, task)
 
             # Get user's timezone
             user_timezone = self.get_user_timezone(email) or 'UTC'
@@ -177,10 +225,17 @@ class SheetsAPI:
             
             self.sheets_service.spreadsheets().values().append(
                 spreadsheetId=spreadsheet_id,
-                range=f"{task}!A:B",  # Note: Now using two columns
+                range=f"{task}!A:B",
                 valueInputOption="USER_ENTERED",
-                body={"values": [[timestamp, user_timezone]]}  # Store timezone for historical reference
+                body={"values": [[timestamp, user_timezone]]}
             ).execute()
+
+            # Invalidate cache for this task
+            with self.cache_lock:
+                cache_key = self._get_cache_key(email, task)
+                if cache_key in self.cache:
+                    del self.cache[cache_key]
+
             return True
             
         except HttpError as error:
@@ -387,27 +442,59 @@ class SheetsAPI:
                 logger.error(f"Failed to get spreadsheet for {email}")
                 return False
 
-            # Rename the sheet
-            sheet_id = self.get_sheet_id(spreadsheet_id, old_task)
-            if sheet_id is None:
-                logger.error(f"Failed to get sheet ID for {old_task}")
-                return False
+            # Check if this is a new task or renaming an existing one
+            old_sheet_id = self.get_sheet_id(spreadsheet_id, old_task)
+            
+            if old_sheet_id is None:
+                # This is a new task - create new sheet
+                try:
+                    response = self.sheets_service.spreadsheets().batchUpdate(
+                        spreadsheetId=spreadsheet_id,
+                        body={
+                            "requests": [{
+                                "addSheet": {
+                                    "properties": {"title": new_task}
+                                }
+                            }]
+                        }
+                    ).execute()
+                    
+                    # Ensure headers exist for new sheet
+                    self._ensure_headers(spreadsheet_id, new_task)
+                    
+                    # Share the spreadsheet with the user and admin
+                    self.share_spreadsheet(spreadsheet_id, email)
+                    self.share_spreadsheet(spreadsheet_id, self.admin_email)
+                    
+                    return True
+                    
+                except HttpError as error:
+                    if 'already exists' in str(error):
+                        logger.error(f"Sheet {new_task} already exists")
+                        return False
+                    logger.exception(error)
+                    return False
+            else:
+                # This is renaming an existing sheet
+                body = {
+                    'requests': [{
+                        'updateSheetProperties': {
+                            'properties': {'sheetId': old_sheet_id, 'title': new_task},
+                            'fields': 'title'
+                        }
+                    }]
+                }
+                self.sheets_service.spreadsheets().batchUpdate(
+                    spreadsheetId=spreadsheet_id, 
+                    body=body
+                ).execute()
 
-            body = {
-                'requests': [{
-                    'updateSheetProperties': {
-                        'properties': {'sheetId': sheet_id, 'title': new_task},
-                        'fields': 'title'
-                    }
-                }]
-            }
-            self.sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body=body).execute()
+                # Share the spreadsheet with the user and admin
+                self.share_spreadsheet(spreadsheet_id, email)
+                self.share_spreadsheet(spreadsheet_id, self.admin_email)
 
-            # Share the spreadsheet with the user and admin
-            self.share_spreadsheet(spreadsheet_id, email)
-            self.share_spreadsheet(spreadsheet_id, self.admin_email)
-
-            return True
+                return True
+                
         except HttpError as error:
             logger.exception(error)
             return False
