@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Typography } from '@mui/material';
 import { API_BASE_URL } from '../config';
 
 function HourlyActivityChart({ email, task }) {
   const [hourlyData, setHourlyData] = useState([]);
 
-  const fetchHourlyData = async () => {
+  const fetchHourlyData = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/hourly_activity?email=${encodeURIComponent(email)}&task=${encodeURIComponent(task)}`);
       if (response.ok) {
@@ -17,11 +17,11 @@ function HourlyActivityChart({ email, task }) {
     } catch (error) {
       console.error('Error fetching hourly data:', error);
     }
-  };
+  }, [email, task]); // Dependencies for useCallback
 
   useEffect(() => {
     fetchHourlyData();
-  }, [email, task]);
+  }, [fetchHourlyData]); // Now fetchHourlyData is stable and can be used in dependencies
 
   return (
     <Box sx={{ width: '100%', mt: 6, mb: 4 }}>
