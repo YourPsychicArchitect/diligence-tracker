@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Box, Typography } from '@mui/material';
 import { API_BASE_URL } from '../config';
 
-function HourlyActivityChart({ email, task }) {
+const HourlyActivityChart = forwardRef(({ email, task }, ref) => {
   const [hourlyData, setHourlyData] = useState([]);
 
   const fetchHourlyData = useCallback(async () => {
+    if (!email || !task) return;
+    
     try {
       const response = await fetch(`${API_BASE_URL}/api/hourly_activity?email=${encodeURIComponent(email)}&task=${encodeURIComponent(task)}`);
       if (response.ok) {
@@ -17,11 +19,16 @@ function HourlyActivityChart({ email, task }) {
     } catch (error) {
       console.error('Error fetching hourly data:', error);
     }
-  }, [email, task]); // Dependencies for useCallback
+  }, [email, task]);
+
+  // Expose the refresh function to parent components
+  useImperativeHandle(ref, () => ({
+    refreshData: fetchHourlyData
+  }));
 
   useEffect(() => {
     fetchHourlyData();
-  }, [fetchHourlyData]); // Now fetchHourlyData is stable and can be used in dependencies
+  }, [fetchHourlyData]);
 
   return (
     <Box sx={{ width: '100%', mt: 6, mb: 4 }}>
@@ -92,6 +99,6 @@ function HourlyActivityChart({ email, task }) {
       </Box>
     </Box>
   );
-}
+});
 
 export default HourlyActivityChart;
